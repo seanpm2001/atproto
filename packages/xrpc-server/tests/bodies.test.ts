@@ -4,7 +4,7 @@ import { ReadableStream } from 'stream/web'
 import { gzipSync } from 'zlib'
 import getPort from 'get-port'
 import { LexiconDoc } from '@atproto/lexicon'
-import xrpc, { ServiceClient } from '@atproto/xrpc'
+import { XrpcClient } from '@atproto/xrpc'
 import { bytesToStream, cidForCbor } from '@atproto/common'
 import { randomBytes } from '@atproto/crypto'
 import { createServer, closeServer } from './_util'
@@ -132,15 +132,14 @@ describe('Bodies', () => {
       }
     },
   )
-  xrpc.addLexicons(LEXICONS)
 
-  let client: ServiceClient
+  let client: XrpcClient
   let url: string
   beforeAll(async () => {
     const port = await getPort()
     s = await createServer(port, server)
     url = `http://localhost:${port}`
-    client = xrpc.service(url)
+    client = new XrpcClient(url, LEXICONS)
   })
   afterAll(async () => {
     await closeServer(s)

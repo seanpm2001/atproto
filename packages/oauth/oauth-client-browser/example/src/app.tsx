@@ -24,8 +24,16 @@ const client = new BrowserOAuthClient({
 })
 
 function App() {
-  const { initialized, oauthAgent, signedIn, signOut, error, loading, signIn } =
-    useOAuth(client)
+  const {
+    initialized,
+    oauthAgent,
+    bskyAgent,
+    signedIn,
+    signOut,
+    error,
+    loading,
+    signIn,
+  } = useOAuth(client)
   const [profile, setProfile] = useState<{
     value: { displayName?: string }
   } | null>(null)
@@ -36,34 +44,26 @@ function App() {
     const info = await oauthAgent.getUserinfo()
     console.log('info', info)
 
-    if (!oauthAgent) return
+    if (!bskyAgent) return
 
     // A call that requires to be authenticated
     console.log(
-      await oauthAgent
-        .request(
-          '/xrpc/com.atproto.server.getServiceAuth?' +
-            new URLSearchParams({ aud: info.sub }).toString(),
-        )
-        .then((r) => r.json()),
+      await bskyAgent.com.atproto.server.getServiceAuth({
+        aud: info.sub,
+      }),
     )
 
     // This call does not require authentication
-    const profile = await oauthAgent
-      .request(
-        '/xrpc/com.atproto.repo.getRecord?' +
-          new URLSearchParams({
-            repo: info.sub,
-            collection: 'app.bsky.actor.profile',
-            rkey: 'self',
-          }).toString(),
-      )
-      .then((r) => r.json())
+    const profile = await bskyAgent.com.atproto.repo.getRecord({
+      repo: info.sub,
+      collection: 'app.bsky.actor.profile',
+      rkey: 'self',
+    })
 
     console.log(profile)
 
     setProfile(profile.data)
-  }, [oauthAgent])
+  }, [oauthAgent, bskyAgent])
 
   if (!initialized) {
     return <p>{error || 'Loading...'}</p>

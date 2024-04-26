@@ -1,3 +1,4 @@
+import { BskyAgent } from '@atproto/api'
 import {
   OAuthAgent,
   OAuthAuthorizeOptions,
@@ -7,7 +8,7 @@ import {
   BrowserOAuthClient,
   LoginContinuedInParentWindowError,
 } from '@atproto/oauth-client-browser'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const CURRENT_SESSION_ID_KEY = 'CURRENT_SESSION_ID_KEY'
 
@@ -18,6 +19,11 @@ export function useOAuth(client: BrowserOAuthClient) {
   const [error, setError] = useState<null | string>(null)
   const [loading, setLoading] = useState(true)
   const [state, setState] = useState<undefined | string>(undefined)
+
+  const bskyAgent = useMemo(
+    () => (oauthAgent ? new BskyAgent(oauthAgent) : null),
+    [oauthAgent],
+  )
 
   useEffect(() => {
     // Ignore init step
@@ -123,6 +129,7 @@ export function useOAuth(client: BrowserOAuthClient) {
   return {
     initialized: oauthAgent !== undefined,
     oauthAgent: oauthAgent ?? null,
+    bskyAgent,
     state,
     loading,
     error,
