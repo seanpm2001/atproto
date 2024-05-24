@@ -22,7 +22,8 @@ export const proxyHandler =
       const { url, aud } = await formatUrlAndAud(ctx, req)
       const auth = await ctx.authVerifier.access({ req })
       const headers = await formatHeaders(ctx, req, aud, auth.credentials.did)
-      const body = stream.Readable.toWeb(req)
+      const body: webStream.ReadableStream<Uint8Array> =
+        stream.Readable.toWeb(req)
       const reqInit = formatReqInit(req, headers, body)
       const proxyRes = await makeRequest(url, reqInit)
       await pipeProxyRes(proxyRes, res)
@@ -112,7 +113,7 @@ export const formatHeaders = async (
 const formatReqInit = (
   req: express.Request,
   headers: Record<string, string>,
-  body?: Uint8Array | ReadableStream,
+  body?: Uint8Array | webStream.ReadableStream<Uint8Array>,
 ): RequestInit => {
   if (req.method === 'GET') {
     return {
