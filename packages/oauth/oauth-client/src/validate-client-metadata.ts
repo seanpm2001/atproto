@@ -20,7 +20,7 @@ export function validateClientMetadata(
     throw new TypeError('client_id URI must not contain a query or fragment')
   }
   if (url.href !== metadata.client_id) {
-    throw new TypeError('client_id URI must be a normalized URL')
+    throw new TypeError(`client_id URI must be "${url.href}"`)
   }
 
   if (
@@ -28,7 +28,7 @@ export function validateClientMetadata(
     url.hostname === '[::1]' ||
     url.hostname === '127.0.0.1'
   ) {
-    if (url.protocol !== 'http:' || url.port) {
+    if (url.protocol !== 'http:') {
       throw new TypeError('loopback clients must use "http:" and port "80"')
     }
   }
