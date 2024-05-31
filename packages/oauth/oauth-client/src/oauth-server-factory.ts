@@ -2,7 +2,7 @@ import { GlobalFetch } from '@atproto-labs/fetch'
 import { Key, Keyset } from '@atproto/jwk'
 import { OAuthServerMetadata } from '@atproto/oauth-types'
 
-import { CryptoWrapper } from './crypto-wrapper.js'
+import { Runtime } from './runtime.js'
 import { OAuthResolver } from './oauth-resolver.js'
 import { DpopNonceCache, OAuthServerAgent } from './oauth-server-agent.js'
 import { MetadataResolveOptions } from './oauth-server-metadata-resolver.js'
@@ -11,7 +11,7 @@ import { OAuthClientMetadataId } from './types.js'
 export class OAuthServerFactory {
   constructor(
     readonly clientMetadata: OAuthClientMetadataId,
-    readonly crypto: CryptoWrapper,
+    readonly runtime: Runtime,
     readonly resolver: OAuthResolver,
     readonly fetch: GlobalFetch,
     readonly keyset: Keyset | undefined,
@@ -34,7 +34,7 @@ export class OAuthServerFactory {
       this.clientMetadata,
       this.dpopNonceCache,
       this.resolver,
-      this.crypto,
+      this.runtime,
       this.keyset,
       this.fetch,
     )

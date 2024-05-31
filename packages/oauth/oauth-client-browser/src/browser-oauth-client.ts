@@ -5,7 +5,6 @@ import {
   OAuthCallbackError,
   OAuthClient,
   Session,
-  SessionStore,
   TokenSet,
 } from '@atproto/oauth-client'
 import {
@@ -18,7 +17,7 @@ import {
   BrowserOAuthDatabase,
   DatabaseStore,
 } from './browser-oauth-database.js'
-import { CryptoSubtle } from './crypto-subtle.js'
+import { BrowserRuntimeImplementation } from './browser-runtime-implementation.js'
 import { LoginContinuedInParentWindowError } from './errors.js'
 
 export type BrowserOAuthClientOptions = {
@@ -26,8 +25,9 @@ export type BrowserOAuthClientOptions = {
   handleResolver?: HandleResolver | string | URL
   responseMode?: OAuthResponseMode
   plcDirectoryUrl?: string | URL
+
+  crypto?: typeof globalThis.crypto
   fetch?: typeof globalThis.fetch
-  crypto?: Crypto
 }
 
 type EventDetails = {
@@ -46,40 +46,33 @@ const initEvent = <T extends keyof EventDetails>(
 
 const NAMESPACE = `@@atproto/oauth-client-browser`
 
+//- Popup channel
+
 const POPUP_CHANNEL_NAME = `${NAMESPACE}(popup-channel)`
 const POPUP_STATE_PREFIX = `${NAMESPACE}(popup-state):`
 
-const REVOKE_CHANNEL_NAME = `${NAMESPACE}(revoke-channel)`
-
-type ChannelResultData = {
+type PopupChannelResultData = {
   key: string
   result: PromiseRejectedResult | PromiseFulfilledResult<string>
 }
 
-type ChannelAckData = {
+type PopupChannelAckData = {
   key: string
   ack: true
 }
 
-type ChannelData = ChannelResultData | ChannelAckData
+type PopupChannelData = PopupChannelResultData | PopupChannelAckData
 
-const revokeChannel = new BroadcastChannel(REVOKE_CHANNEL_NAME)
+//- Deleted channel
 
+const deletedChannel = new BroadcastChannel(`${NAMESPACE}(deleted-channel)`)
+
+type WrappedSessionStore = Disposable & DatabaseStore<Session>
 const wrapSessionStore = (
   dbStore: DatabaseStore<Session>,
   eventTarget: EventTarget,
-): Required<SessionStore & DatabaseStore<Session>> => {
-  const onMessage = (event: MessageEvent<string>) => {
-    if (event.source !== window) {
-      // If the message was posted from the current window, the "delete" event
-      // will already have been triggered.
-      eventTarget.dispatchEvent(initEvent('deleted', { sub: event.data }))
-    }
-  }
-
-  revokeChannel.addEventListener('message', onMessage)
-
-  return {
+) => {
+  const store: WrappedSessionStore = {
     getKeys: async () => {
       return dbStore.getKeys()
     },
@@ -93,17 +86,30 @@ const wrapSessionStore = (
     },
     del: async (sub) => {
       await dbStore.del(sub)
-      revokeChannel.postMessage(sub)
+      deletedChannel.postMessage(sub)
 
-      eventTarget.dispatchEvent(initEvent('deleted', { sub }))
-    },
-    revoked: (sub) => {
       eventTarget.dispatchEvent(initEvent('deleted', { sub }))
     },
     clear: async () => {
       await dbStore.clear?.()
     },
+    [Symbol.dispose]: () => {
+      deletedChannel.removeEventListener('message', onMessage)
+    },
   }
+
+  const onMessage = (event: MessageEvent<string>) => {
+    // Listen for "deleted" events from other windows. The content will already
+    // have been deleted from the store so we only need to notify the listeners.
+    if (event.source !== window) {
+      const sub = event.data
+      eventTarget.dispatchEvent(initEvent('deleted', { sub }))
+    }
+  }
+
+  deletedChannel.addEventListener('message', onMessage)
+
+  return store
 }
 
 export type BrowserOAuthClientLoadOptions = Omit<
@@ -133,7 +139,7 @@ export class BrowserOAuthClient extends OAuthClient {
     })
   }
 
-  readonly sessionStore: DatabaseStore<Session>
+  readonly sessionStore: WrappedSessionStore
 
   private readonly eventTarget: EventTarget
   private readonly database: BrowserOAuthDatabase
@@ -170,7 +176,7 @@ export class BrowserOAuthClient extends OAuthClient {
 
       responseMode,
       fetch,
-      cryptoImplementation: new CryptoSubtle(crypto),
+      runtimeImplementation: new BrowserRuntimeImplementation(crypto),
       plcDirectoryUrl,
       handleResolver,
       sessionStore,
@@ -282,12 +288,12 @@ export class BrowserOAuthClient extends OAuthClient {
     popup?.focus()
 
     return new Promise<OAuthAgent>((resolve, reject) => {
-      const channel = new BroadcastChannel(POPUP_CHANNEL_NAME)
+      const popupChannel = new BroadcastChannel(POPUP_CHANNEL_NAME)
 
       const cleanup = () => {
         clearTimeout(timeout)
-        channel.removeEventListener('message', onMessage)
-        channel.close()
+        popupChannel.removeEventListener('message', onMessage)
+        popupChannel.close()
         options?.signal?.removeEventListener('abort', cancel)
         popup?.close()
       }
@@ -304,12 +310,12 @@ export class BrowserOAuthClient extends OAuthClient {
 
       const timeout = setTimeout(cancel, 5 * 60e3)
 
-      const onMessage = async ({ data }: MessageEvent<ChannelData>) => {
+      const onMessage = async ({ data }: MessageEvent<PopupChannelData>) => {
         if (data.key !== stateKey) return
         if (!('result' in data)) return
 
         // Send acknowledgment to popup window
-        channel.postMessage({ key: stateKey, ack: true })
+        popupChannel.postMessage({ key: stateKey, ack: true })
 
         cleanup()
 
@@ -329,7 +335,7 @@ export class BrowserOAuthClient extends OAuthClient {
         }
       }
 
-      channel.addEventListener('message', onMessage)
+      popupChannel.addEventListener('message', onMessage)
     })
   }
 
@@ -366,14 +372,14 @@ export class BrowserOAuthClient extends OAuthClient {
     // the following code to run again if the user refreshes the page)
     history.replaceState(null, '', location.pathname)
 
-    const sendResult = (message: ChannelResultData) => {
-      const channel = new BroadcastChannel(POPUP_CHANNEL_NAME)
+    const sendResult = (message: PopupChannelResultData) => {
+      const popupChannel = new BroadcastChannel(POPUP_CHANNEL_NAME)
 
       return new Promise<boolean>((resolve) => {
         const cleanup = (result: boolean) => {
           clearTimeout(timer)
-          channel.removeEventListener('message', onMessage)
-          channel.close()
+          popupChannel.removeEventListener('message', onMessage)
+          popupChannel.close()
           resolve(result)
         }
 
@@ -381,14 +387,12 @@ export class BrowserOAuthClient extends OAuthClient {
           cleanup(false)
         }
 
-        const onMessage = ({ data }: MessageEvent<ChannelData>) => {
-          if (message.key !== data.key || !('ack' in data)) return
-
-          cleanup(true)
+        const onMessage = ({ data }: MessageEvent<PopupChannelData>) => {
+          if ('ack' in data && message.key === data.key) cleanup(true)
         }
 
-        channel.addEventListener('message', onMessage)
-        channel.postMessage(message)
+        popupChannel.addEventListener('message', onMessage)
+        popupChannel.postMessage(message)
         // Receiving of "ack" should be very fast, giving it 500 ms anyway
         const timer = setTimeout(onTimeout, 500)
       })
@@ -447,6 +451,8 @@ export class BrowserOAuthClient extends OAuthClient {
   }
 
   async [Symbol.asyncDispose]() {
+    // TODO This should be implemented using a DisposableStack
+    await this.sessionStore[Symbol.dispose]()
     await this.database[Symbol.asyncDispose]()
   }
 }

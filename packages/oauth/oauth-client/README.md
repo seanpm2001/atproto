@@ -18,7 +18,7 @@ const client = new OAuthClient({
     // loopback client)
   },
 
-  cryptoImplementation: {
+  runtimeImplementation: {
     // A runtime specific implementation of the crypto operations needed by the
     // OAuth client.
 

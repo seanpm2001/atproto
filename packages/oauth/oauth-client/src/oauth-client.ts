@@ -21,8 +21,6 @@ import {
 } from '@atproto/oauth-types'
 
 import { FALLBACK_ALG } from './constants.js'
-import { CryptoImplementation } from './crypto-implementation.js'
-import { CryptoWrapper } from './crypto-wrapper.js'
 import { OAuthAgent } from './oauth-agent.js'
 import { OAuthCallbackError } from './oauth-callback-error.js'
 import { OAuthResolver } from './oauth-resolver.js'
@@ -32,6 +30,8 @@ import {
   MetadataCache,
   OAuthServerMetadataResolver,
 } from './oauth-server-metadata-resolver.js'
+import { RuntimeImplementation } from './runtime-implementation.js'
+import { Runtime } from './runtime.js'
 import { SessionGetter, SessionStore } from './session-getter.js'
 import { OAuthAuthorizeOptions, OAuthClientMetadataId } from './types.js'
 import { validateClientMetadata } from './validate-client-metadata.js'
@@ -53,7 +53,6 @@ export type StateStore = SimpleStore<string, InternalStateData>
 
 // Export all types needed to construct OAuthClientOptions
 export type {
-  CryptoImplementation,
   DpopNonceCache,
   GlobalFetch,
   Keyset,
@@ -61,6 +60,7 @@ export type {
   OAuthClientMetadata,
   OAuthClientMetadataInput,
   OAuthResponseMode,
+  RuntimeImplementation,
   SessionStore,
 }
 
@@ -81,7 +81,7 @@ export type OAuthClientOptions = {
   // Services
   handleResolver: HandleResolver | URL | string
   plcDirectoryUrl?: URL | string
-  cryptoImplementation: CryptoImplementation
+  runtimeImplementation: RuntimeImplementation
   fetch?: GlobalFetch
 }
 
@@ -92,7 +92,7 @@ export class OAuthClient {
   readonly keyset?: Keyset
 
   // Services
-  readonly crypto: CryptoWrapper
+  readonly runtime: Runtime
   readonly fetch: GlobalFetch
   readonly oauthResolver: OAuthResolver
   readonly serverFactory: OAuthServerFactory
@@ -116,7 +116,7 @@ export class OAuthClient {
     clientMetadata,
     handleResolver,
     plcDirectoryUrl,
-    cryptoImplementation,
+    runtimeImplementation,
     keyset,
   }: OAuthClientOptions) {
     this.keyset = keyset
@@ -127,7 +127,7 @@ export class OAuthClient {
     this.clientMetadata = validateClientMetadata(clientMetadata, this.keyset)
     this.responseMode = responseMode
 
-    this.crypto = new CryptoWrapper(cryptoImplementation)
+    this.runtime = new Runtime(runtimeImplementation)
     this.fetch = fetch
     this.oauthResolver = new OAuthResolver(
       new IdentityResolver(
@@ -144,14 +144,18 @@ export class OAuthClient {
     )
     this.serverFactory = new OAuthServerFactory(
       this.clientMetadata,
-      this.crypto,
+      this.runtime,
       this.oauthResolver,
       this.fetch,
       this.keyset,
       dpopNonceCache,
     )
 
-    this.sessionGetter = new SessionGetter(sessionStore, this.serverFactory)
+    this.sessionGetter = new SessionGetter(
+      sessionStore,
+      this.serverFactory,
+      this.runtime,
+    )
     this.stateStore = stateStore
   }
 
@@ -185,13 +189,13 @@ export class OAuthClient {
       signal: options?.signal,
     })
 
-    const nonce = await this.crypto.generateNonce()
-    const pkce = await this.crypto.generatePKCE()
-    const dpopKey = await this.crypto.generateKey(
+    const nonce = await this.runtime.generateNonce()
+    const pkce = await this.runtime.generatePKCE()
+    const dpopKey = await this.runtime.generateKey(
       metadata.dpop_signing_alg_values_supported || [FALLBACK_ALG],
     )
 
-    const state = await this.crypto.generateNonce()
+    const state = await this.runtime.generateNonce()
 
     await this.stateStore.set(state, {
       iss: metadata.issuer,
@@ -338,7 +342,7 @@ export class OAuthClient {
       const tokenSet = await server.exchangeCode(codeParam, stateData.verifier)
       try {
         if (tokenSet.id_token) {
-          await this.crypto.validateIdTokenClaims(
+          await this.runtime.validateIdTokenClaims(
             tokenSet.id_token,
             stateParam,
             stateData.nonce,

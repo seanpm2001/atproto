@@ -19,13 +19,13 @@ import {
 } from '@atproto/oauth-types'
 
 import { FALLBACK_ALG } from './constants.js'
-import { CryptoWrapper } from './crypto-wrapper.js'
 import { dpopFetchWrapper } from './fetch-dpop.js'
 import { OAuthResolver } from './oauth-resolver.js'
 import { OAuthResponseError } from './oauth-response-error.js'
+import { RefreshError } from './refresh-error.js'
+import { Runtime } from './runtime.js'
 import { OAuthClientMetadataId } from './types.js'
 import { withSignal } from './util.js'
-import { OAuthRefreshError } from './oauth-refresh-error.js'
 
 export type TokenSet = {
   iss: string
@@ -55,7 +55,7 @@ export class OAuthServerAgent {
     readonly clientMetadata: OAuthClientMetadataId,
     readonly dpopNonces: DpopNonceCache,
     readonly oauthResolver: OAuthResolver,
-    readonly crypto: CryptoWrapper,
+    readonly runtime: Runtime,
     readonly keyset?: Keyset,
     fetch?: GlobalFetch,
   ) {
@@ -64,7 +64,7 @@ export class OAuthServerAgent {
       iss: clientMetadata.client_id,
       key: dpopKey,
       supportedAlgs: serverMetadata.dpop_signing_alg_values_supported,
-      sha256: async (v) => crypto.sha256(v),
+      sha256: async (v) => runtime.sha256(v),
       nonces: dpopNonces,
       isAuthServer: true,
     })
@@ -99,7 +99,7 @@ export class OAuthServerAgent {
 
   async refresh(tokenSet: TokenSet): Promise<TokenSet> {
     if (!tokenSet.refresh_token) {
-      throw new OAuthRefreshError(tokenSet.sub, 'No refresh token available')
+      throw new RefreshError(tokenSet.sub, 'No refresh token available')
     }
 
     const tokenResponse = await this.request('token', {
@@ -109,13 +109,13 @@ export class OAuthServerAgent {
 
     try {
       if (tokenSet.sub !== tokenResponse.sub) {
-        throw new OAuthRefreshError(
+        throw new RefreshError(
           tokenSet.sub,
           `Unexpected "sub" in token response (${tokenResponse.sub})`,
         )
       }
       if (tokenSet.iss !== this.serverMetadata.issuer) {
-        throw new OAuthRefreshError(tokenSet.sub, 'Issuer mismatch')
+        throw new RefreshError(tokenSet.sub, 'Issuer mismatch')
       }
 
       return this.processTokenResponse(tokenResponse)
@@ -256,7 +256,7 @@ export class OAuthServerAgent {
                 iss: this.clientMetadata.client_id,
                 sub: this.clientMetadata.client_id,
                 aud: this.serverMetadata.issuer,
-                jti: await this.crypto.generateNonce(),
+                jti: await this.runtime.generateNonce(),
                 iat: Math.floor(Date.now() / 1000),
               },
             ),

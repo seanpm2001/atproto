@@ -27,7 +27,7 @@ export class OAuthAgent {
       iss: server.clientMetadata.client_id,
       key: server.dpopKey,
       supportedAlgs: server.serverMetadata.dpop_signing_alg_values_supported,
-      sha256: async (v) => server.crypto.sha256(v),
+      sha256: async (v) => server.runtime.sha256(v),
       nonces: server.dpopNonces,
       isAuthServer: false,
     })
@@ -125,8 +125,7 @@ export class OAuthAgent {
     const finalResponse = await this.dpopFetch(finalUrl, { ...init, headers })
 
     // There is no need to keep the session in the store if the token is expired
-    // and there is no way to refresh it. This will typically happen if there is
-    // no expiry date returned with the token.
+    // and there is no way to refresh it.
     if (isTokenExpiredResponse(finalResponse)) {
       // TODO: Is there a "softer" way to handle this, e.g. by marking the
       // session as "expired" and allow the user to trigger a new login?

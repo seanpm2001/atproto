@@ -10,7 +10,7 @@ import {
 } from '@atproto/oauth-client'
 import { OAuthClientMetadata } from '@atproto/oauth-types'
 
-import { ReactNativeCryptoImplementation } from './react-native-crypto-implementation.js'
+import { ReactNativeRuntimeImplementation } from './react-native-runtime-implementation.js'
 import { ReactNativeStoreWithKey } from './react-native-store-with-key.js'
 
 export type ReactNativeOAuthClientOptions = {
@@ -34,7 +34,7 @@ export class ReactNativeOAuthClient extends OAuthClient {
       // Compatibility: react-native typings do not allow URL as RequestInit
       fetch: (input, init) =>
         fetch(input instanceof URL ? input.href : input, init),
-      cryptoImplementation: new ReactNativeCryptoImplementation(),
+      runtimeImplementation: new ReactNativeRuntimeImplementation(),
       sessionStore: new ReactNativeStoreWithKey<Session>(({ tokenSet }) =>
         tokenSet.refresh_token || !tokenSet.expires_at
           ? null

@@ -1,4 +1,4 @@
-export class OAuthRefreshError extends Error {
+export class RefreshError extends Error {
   constructor(
     public readonly sub: string,
     message: string,
