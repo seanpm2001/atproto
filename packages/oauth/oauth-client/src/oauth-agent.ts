@@ -17,8 +17,8 @@ export class OAuthAgent {
   ) => Promise<Response>
 
   constructor(
-    private readonly server: OAuthServerAgent,
-    public readonly sessionId: string,
+    public readonly server: OAuthServerAgent,
+    public readonly sub: string,
     private readonly sessionGetter: SessionGetter,
     fetch: GlobalFetch = globalThis.fetch,
   ) {
@@ -42,15 +42,12 @@ export class OAuthAgent {
   /**
    * @param refresh See {@link SessionGetter.getSession}
    */
-  async getTokenSet(refresh?: boolean): Promise<TokenSet> {
-    const { tokenSet } = await this.sessionGetter.getSession(
-      this.sessionId,
-      refresh,
-    )
+  protected async getTokenSet(refresh?: boolean): Promise<TokenSet> {
+    const { tokenSet } = await this.sessionGetter.getSession(this.sub, refresh)
     return tokenSet
   }
 
-  async getUserinfo(): Promise<{
+  async getInfo(): Promise<{
     userinfo?: JwtPayload
     expired?: boolean
     scope?: string
@@ -77,13 +74,10 @@ export class OAuthAgent {
 
   async signOut(): Promise<void> {
     try {
-      const { tokenSet } = await this.sessionGetter.getSession(
-        this.sessionId,
-        false,
-      )
+      const { tokenSet } = await this.sessionGetter.getSession(this.sub, false)
       await this.server.revoke(tokenSet.access_token)
     } finally {
-      await this.sessionGetter.delStored(this.sessionId)
+      await this.sessionGetter.delStored(this.sub)
     }
   }
 
@@ -96,19 +90,20 @@ export class OAuthAgent {
 
     const headers = new Headers(init?.headers)
     headers.set('Authorization', initialAuth)
+
     const initialResponse = await this.dpopFetch(initialUrl, {
       ...init,
       headers,
     })
 
     // If the token is not expired, we don't need to refresh it
-    if (!isTokenExpiredResponse(initialResponse)) return initialResponse
-
-    // If there is no refresh token, no need to try to refresh the token
-    if (!tokenSet.refresh_token) return initialResponse
+    if (!isTokenExpiredResponse(initialResponse)) {
+      return initialResponse
+    }
 
     let tokenSetFresh: TokenSet
     try {
+      // "true" here will cause the token to be refreshed
       tokenSetFresh = await this.getTokenSet(true)
     } catch (err) {
       return initialResponse
@@ -122,18 +117,23 @@ export class OAuthAgent {
       return initialResponse
     }
 
-    const updatedAuth = `${tokenSetFresh.token_type} ${tokenSetFresh.access_token}`
+    const finalAuth = `${tokenSetFresh.token_type} ${tokenSetFresh.access_token}`
+    const finalUrl = new URL(pathname, tokenSetFresh.aud)
 
-    // No point in retrying the request if the token is still the same
-    if (updatedAuth === initialAuth) {
-      return initialResponse
+    headers.set('Authorization', finalAuth)
+
+    const finalResponse = await this.dpopFetch(finalUrl, { ...init, headers })
+
+    // There is no need to keep the session in the store if the token is expired
+    // and there is no way to refresh it. This will typically happen if there is
+    // no expiry date returned with the token.
+    if (isTokenExpiredResponse(finalResponse)) {
+      // TODO: Is there a "softer" way to handle this, e.g. by marking the
+      // session as "expired" and allow the user to trigger a new login?
+      await this.sessionGetter.delStored(this.sub)
     }
 
-    const updatedUrl = new URL(pathname, tokenSetFresh.aud)
-
-    headers.set('Authorization', updatedAuth)
-
-    return this.dpopFetch(updatedUrl, { ...init, headers })
+    return finalResponse
   }
 }
 

@@ -69,7 +69,7 @@ export class AtpAgent {
     this.api.setHeader('atproto-proxy', () => this.proxyHeader ?? null)
   }
 
-  clone() {
+  clone(): AtpAgent {
     const inst = new AtpAgent(this.sessionManager)
     this.copyInto(inst)
     return inst
@@ -83,7 +83,7 @@ export class AtpAgent {
   withProxy(serviceType: AtprotoServiceType, did: string) {
     const inst = this.clone()
     inst.configureProxyHeader(serviceType, did)
-    return inst
+    return inst as ReturnType<this['clone']>
   }
 
   /** @deprecated only used for a very particular use-case in the official Bluesky app */
@@ -92,10 +92,28 @@ export class AtpAgent {
   }
 
   /**
-   * Get the active session's DID
+   * Get the authenticated user's DID, if any.
    */
-  async getDid(): Promise<string> {
-    return this.sessionManager.getDid()
+  get did() {
+    return this.sessionManager.did
+  }
+
+  /**
+   * Get the authenticated user's DID, or throw an error if not authenticated.
+   */
+  getDid() {
+    const { did } = this
+    if (did) return did
+
+    throw new Error('Not logged in')
+  }
+
+  /**
+   * Assert that the user is authenticated. This method exists mainly for code
+   * clarity and is equivalent to calling getDid().
+   */
+  assertAuthenticated() {
+    void this.getDid()
   }
 
   /**

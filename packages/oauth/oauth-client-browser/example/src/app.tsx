@@ -1,16 +1,9 @@
+import { BskyAgent } from '@atproto/api'
 import { BrowserOAuthClient } from '@atproto/oauth-client-browser'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import LoginForm from './login-form'
 import { useOAuth } from './oauth'
-
-/**
- * State data that we want to persist across the OAuth flow, when the user is
- * "logging in".
- */
-export type AppState = {
-  foo: string
-}
 
 const client = new BrowserOAuthClient({
   plcDirectoryUrl: 'http://localhost:2582', // dev-env
@@ -24,24 +17,20 @@ const client = new BrowserOAuthClient({
 })
 
 function App() {
-  const {
-    initialized,
-    oauthAgent,
-    bskyAgent,
-    signedIn,
-    signOut,
-    error,
-    loading,
-    signIn,
-  } = useOAuth(client)
+  const { agent, signedIn, signOut, loading, signIn } = useOAuth(client)
   const [profile, setProfile] = useState<{
     value: { displayName?: string }
   } | null>(null)
 
-  const loadProfile = useCallback(async () => {
-    if (!oauthAgent) return
+  const bskyAgent = useMemo(
+    () => (agent ? new BskyAgent(agent) : null),
+    [agent],
+  )
 
-    const info = await oauthAgent.getUserinfo()
+  const loadProfile = useCallback(async () => {
+    if (!agent) return
+
+    const info = await agent.getInfo()
     console.log('info', info)
 
     if (!bskyAgent) return
@@ -49,13 +38,13 @@ function App() {
     // A call that requires to be authenticated
     console.log(
       await bskyAgent.com.atproto.server.getServiceAuth({
-        aud: info.sub,
+        aud: agent.sub,
       }),
     )
 
     // This call does not require authentication
     const profile = await bskyAgent.com.atproto.repo.getRecord({
-      repo: info.sub,
+      repo: agent.sub,
       collection: 'app.bsky.actor.profile',
       rkey: 'self',
     })
@@ -63,11 +52,7 @@ function App() {
     console.log(profile)
 
     setProfile(profile.data)
-  }, [oauthAgent, bskyAgent])
-
-  if (!initialized) {
-    return <p>{error || 'Loading...'}</p>
-  }
+  }, [agent, bskyAgent])
 
   return signedIn ? (
     <div>
@@ -80,7 +65,7 @@ function App() {
       <button onClick={signOut}>Logout</button>
     </div>
   ) : (
-    <LoginForm error={error} loading={loading} onLogin={signIn} />
+    <LoginForm loading={loading} onLogin={signIn} />
   )
 }
 

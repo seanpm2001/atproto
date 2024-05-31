@@ -25,6 +25,7 @@ import { OAuthResolver } from './oauth-resolver.js'
 import { OAuthResponseError } from './oauth-response-error.js'
 import { OAuthClientMetadataId } from './types.js'
 import { withSignal } from './util.js'
+import { OAuthRefreshError } from './oauth-refresh-error.js'
 
 export type TokenSet = {
   iss: string
@@ -98,7 +99,7 @@ export class OAuthServerAgent {
 
   async refresh(tokenSet: TokenSet): Promise<TokenSet> {
     if (!tokenSet.refresh_token) {
-      throw new Error('No refresh token available')
+      throw new OAuthRefreshError(tokenSet.sub, 'No refresh token available')
     }
 
     const tokenResponse = await this.request('token', {
@@ -108,10 +109,13 @@ export class OAuthServerAgent {
 
     try {
       if (tokenSet.sub !== tokenResponse.sub) {
-        throw new TypeError(`Unexpected "sub" in token response`)
+        throw new OAuthRefreshError(
+          tokenSet.sub,
+          `Unexpected "sub" in token response (${tokenResponse.sub})`,
+        )
       }
       if (tokenSet.iss !== this.serverMetadata.issuer) {
-        throw new TypeError('Issuer mismatch')
+        throw new OAuthRefreshError(tokenSet.sub, 'Issuer mismatch')
       }
 
       return this.processTokenResponse(tokenResponse)

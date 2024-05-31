@@ -155,7 +155,7 @@ export class BskyAgent extends AtpAgent {
     record: Partial<AppBskyFeedPost.Record> &
       Omit<AppBskyFeedPost.Record, 'createdAt'>,
   ) {
-    const repo = await this.getDid()
+    const repo = this.getDid()
 
     record.createdAt = record.createdAt || new Date().toISOString()
     return this.api.app.bsky.feed.post.create(
@@ -165,7 +165,7 @@ export class BskyAgent extends AtpAgent {
   }
 
   async deletePost(postUri: string) {
-    await this.getDid()
+    this.assertAuthenticated()
 
     const postUrip = new AtUri(postUri)
     return await this.api.app.bsky.feed.post.delete({
@@ -175,7 +175,7 @@ export class BskyAgent extends AtpAgent {
   }
 
   async like(uri: string, cid: string) {
-    const repo = await this.getDid()
+    const repo = this.getDid()
 
     return await this.api.app.bsky.feed.like.create(
       { repo },
@@ -187,7 +187,7 @@ export class BskyAgent extends AtpAgent {
   }
 
   async deleteLike(likeUri: string) {
-    await this.getDid()
+    this.assertAuthenticated()
 
     const likeUrip = new AtUri(likeUri)
     return await this.api.app.bsky.feed.like.delete({
@@ -197,7 +197,7 @@ export class BskyAgent extends AtpAgent {
   }
 
   async repost(uri: string, cid: string) {
-    const repo = await this.getDid()
+    const repo = this.getDid()
 
     return await this.api.app.bsky.feed.repost.create(
       { repo },
@@ -209,7 +209,7 @@ export class BskyAgent extends AtpAgent {
   }
 
   async deleteRepost(repostUri: string) {
-    await this.getDid()
+    this.assertAuthenticated()
 
     const repostUrip = new AtUri(repostUri)
     return await this.api.app.bsky.feed.repost.delete({
@@ -219,7 +219,7 @@ export class BskyAgent extends AtpAgent {
   }
 
   async follow(subjectDid: string) {
-    const repo = await this.getDid()
+    const repo = this.getDid()
 
     return await this.api.app.bsky.graph.follow.create(
       { repo },
@@ -231,7 +231,7 @@ export class BskyAgent extends AtpAgent {
   }
 
   async deleteFollow(followUri: string) {
-    await this.getDid()
+    this.assertAuthenticated()
 
     const followUrip = new AtUri(followUri)
     return await this.api.app.bsky.graph.follow.delete({
@@ -245,7 +245,7 @@ export class BskyAgent extends AtpAgent {
       existing: AppBskyActorProfile.Record | undefined,
     ) => AppBskyActorProfile.Record | Promise<AppBskyActorProfile.Record>,
   ) {
-    const repo = await this.getDid()
+    const repo = this.getDid()
 
     let retriesRemaining = 5
     while (retriesRemaining >= 0) {
@@ -316,7 +316,7 @@ export class BskyAgent extends AtpAgent {
   }
 
   async blockModList(uri: string) {
-    const repo = await this.getDid()
+    const repo = this.getDid()
 
     return await this.api.app.bsky.graph.listblock.create(
       { repo },
@@ -328,7 +328,7 @@ export class BskyAgent extends AtpAgent {
   }
 
   async unblockModList(uri: string) {
-    const repo = await this.getDid()
+    const repo = this.getDid()
 
     const listInfo = await this.api.app.bsky.graph.getList({
       list: uri,

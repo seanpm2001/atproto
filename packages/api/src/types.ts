@@ -4,7 +4,7 @@ import { ModerationPrefs } from './moderation/types'
 /**
  * Supported proxy targets
  */
-export type AtprotoServiceType = 'atproto_labeler'
+export type AtprotoServiceType = string // 'atproto_labeler'
 
 /**
  * Used by the PersistSessionHandler to indicate what change occurred

@@ -33,12 +33,12 @@ export class StatelessSessionManager extends SessionManager {
     )
   }
 
-  async getServiceUrl(): Promise<URL> {
-    return this.serviceUrl
+  get did() {
+    return undefined
   }
 
-  async getDid(): Promise<string> {
-    throw new Error('Not logged in')
+  async getServiceUrl(): Promise<URL> {
+    return this.serviceUrl
   }
 
   async fetchHandler(url: string, reqInit: RequestInit): Promise<Response> {

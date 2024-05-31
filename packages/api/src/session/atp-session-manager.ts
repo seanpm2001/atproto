@@ -149,11 +149,8 @@ export class AtpSessionManager extends SessionManager {
     return await (0, this.fetch)(updatedReq)
   }
 
-  getDid() {
-    const did = this.session?.did
-    if (did) return did
-
-    throw new Error('Not logged in')
+  get did() {
+    return this.session?.did
   }
 
   /**

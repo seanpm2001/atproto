@@ -30,8 +30,7 @@ export class OAuthSessionManager extends SessionManager {
     return new URL(this.agent.serverMetadata.issuer)
   }
 
-  async getDid(): Promise<string> {
-    const { sub } = await this.agent.getTokenSet()
-    return sub
+  get did() {
+    return this.agent.sub
   }
 }

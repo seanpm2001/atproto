@@ -94,7 +94,7 @@ export class OAuthClient {
   // Services
   readonly crypto: CryptoWrapper
   readonly fetch: GlobalFetch
-  readonly resolver: OAuthResolver
+  readonly oauthResolver: OAuthResolver
   readonly serverFactory: OAuthServerFactory
 
   // Stores
@@ -129,7 +129,7 @@ export class OAuthClient {
 
     this.crypto = new CryptoWrapper(cryptoImplementation)
     this.fetch = fetch
-    this.resolver = new OAuthResolver(
+    this.oauthResolver = new OAuthResolver(
       new IdentityResolver(
         new DidResolverCached(
           new DidResolverCommon({ fetch, plcDirectoryUrl }),
@@ -145,7 +145,7 @@ export class OAuthClient {
     this.serverFactory = new OAuthServerFactory(
       this.clientMetadata,
       this.crypto,
-      this.resolver,
+      this.oauthResolver,
       this.fetch,
       this.keyset,
       dpopNonceCache,
@@ -153,6 +153,21 @@ export class OAuthClient {
 
     this.sessionGetter = new SessionGetter(sessionStore, this.serverFactory)
     this.stateStore = stateStore
+  }
+
+  // Exposed as public API for convenience
+  get identityResolver() {
+    return this.oauthResolver.identityResolver
+  }
+
+  // Exposed as public API for convenience
+  get didResolver() {
+    return this.identityResolver.didResolver
+  }
+
+  // Exposed as public API for convenience
+  get handleResolver() {
+    return this.identityResolver.handleResolver
   }
 
   async authorize(
@@ -166,7 +181,7 @@ export class OAuthClient {
       throw new TypeError('Invalid redirect_uri')
     }
 
-    const { did, metadata } = await this.resolver.resolve(input, {
+    const { did, metadata } = await this.oauthResolver.resolve(input, {
       signal: options?.signal,
     })
 
@@ -253,7 +268,7 @@ export class OAuthClient {
 
   async callback(params: URLSearchParams): Promise<{
     agent: OAuthAgent
-    state?: string
+    state: string | null
   }> {
     const responseJwt = params.get('response')
     if (responseJwt != null) {
@@ -332,16 +347,16 @@ export class OAuthClient {
           )
         }
 
-        const sessionId = await this.crypto.generateNonce(4)
+        const { sub } = tokenSet
 
-        await this.sessionGetter.setStored(sessionId, {
+        await this.sessionGetter.setStored(sub, {
           dpopKey: stateData.dpopKey,
           tokenSet,
         })
 
-        const agent = this.createAgent(server, sessionId)
+        const agent = this.createAgent(server, sub)
 
-        return { agent, state: stateData.appState }
+        return { agent, state: stateData.appState ?? null }
       } catch (err) {
         await server.revoke(tokenSet.access_token)
 
@@ -360,9 +375,9 @@ export class OAuthClient {
    *
    * @param refresh See {@link SessionGetter.getSession}
    */
-  async restore(sessionId: string, refresh?: boolean): Promise<OAuthAgent> {
+  async restore(sub: string, refresh?: boolean): Promise<OAuthAgent> {
     const { dpopKey, tokenSet } = await this.sessionGetter.getSession(
-      sessionId,
+      sub,
       refresh,
     )
 
@@ -371,21 +386,21 @@ export class OAuthClient {
       allowStale: refresh === false,
     })
 
-    return this.createAgent(server, sessionId)
+    return this.createAgent(server, sub)
   }
 
-  async revoke(sessionId: string) {
-    const { dpopKey, tokenSet } = await this.sessionGetter.get(sessionId, {
+  async revoke(sub: string) {
+    const { dpopKey, tokenSet } = await this.sessionGetter.get(sub, {
       allowStale: true,
     })
 
     const server = await this.serverFactory.fromIssuer(tokenSet.iss, dpopKey)
 
     await server.revoke(tokenSet.access_token)
-    await this.sessionGetter.delStored(sessionId)
+    await this.sessionGetter.delStored(sub)
   }
 
-  createAgent(server: OAuthServerAgent, sessionId: string): OAuthAgent {
-    return new OAuthAgent(server, sessionId, this.sessionGetter, this.fetch)
+  createAgent(server: OAuthServerAgent, sub: string): OAuthAgent {
+    return new OAuthAgent(server, sub, this.sessionGetter, this.fetch)
   }
 }
