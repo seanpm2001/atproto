@@ -70,41 +70,60 @@ export class SessionGetter extends CachedGetter<string, Session> {
         const { tokenSet, dpopKey } = storedSession
         const server = await serverFactory.fromIssuer(tokenSet.iss, dpopKey)
 
-        // We must not use the "signal" to cancel anything beyond this point.
-        // This is because we want to ensure that the refreshed token are stored
-        // in the sessionStore, even if the signal is aborted. This should
-        // prevent the token from being refreshed again in the future, causing
-        // the entire session to be invalidated.
+        // We must not use the "signal" to cancel the refresh or its storage in
+        // case of successful refresh. If we obtain a new refresh token, we must
+        // ensure that is gets stored in the session store (by returning the new
+        // session object). Failing to do so would result in the new credentials
+        // being lost.
         options?.signal?.throwIfAborted()
 
         const newTokenSet = await server
           .refresh(tokenSet)
-          .catch(async (err) => {
-            if (await isRefreshDeniedError(err)) {
+          .catch(async (cause) => {
+            if (
+              cause instanceof OAuthResponseError &&
+              cause.status === 400 &&
+              cause.error === 'invalid_grant'
+            ) {
               // In case there is no lock implementation in the runtime, we will
               // wait for a short time to give the other concurrent instances a
               // chance to finish their refreshing of the token. If a concurrent
-              // refresh indeed occurred, we will pretend that this one
-              // succeeded.
-              await new Promise((r) => setTimeout(r, 1000))
+              // refresh did occur, we will pretend that this one succeeded.
+              if (!runtime.hasLock) {
+                await new Promise((r) => setTimeout(r, 1000))
 
-              const stored = await this.getStored(sub)
-              if (stored !== undefined) {
-                if (
+                const stored = await this.getStored(sub)
+                if (stored === undefined) {
+                  // Using a distinct error message mainly for debugging
+                  // purposes
+                  const msg = 'The session was revoked by another process'
+                  throw new RefreshError(sub, msg, { cause })
+                } else if (
                   stored.tokenSet.access_token !== tokenSet.access_token ||
                   stored.tokenSet.refresh_token !== tokenSet.refresh_token
                 ) {
                   // A concurrent refresh occurred. Pretend this one succeeded.
                   return stored.tokenSet
                 } else {
-                  // The session data will be deleted from the sessionStore by
-                  // the "deleteOnError" callback.
+                  // There were no concurrent refresh. The token is (likely)
+                  // simply no longer valid.
                 }
               }
+
+              // Throwing an RefreshError to trigger deletion through the
+              // deleteOnError callback.
+              const msg = cause.errorDescription ?? 'The session was revoked'
+              throw new RefreshError(sub, msg, { cause })
             }
 
-            throw err
+            throw cause
           })
+
+        if (sub !== newTokenSet.sub) {
+          // The server returned another sub. Was the tokenSet manipulated?
+          throw new RefreshError(sub, 'Token set sub mismatch')
+        }
+
         return { ...storedSession, tokenSet: newTokenSet }
       },
       sessionStore,
@@ -124,19 +143,8 @@ export class SessionGetter extends CachedGetter<string, Session> {
           await server.revoke(tokenSet.refresh_token ?? tokenSet.access_token)
           throw err
         },
-        deleteOnError: async (err, sub, { tokenSet }) => {
-          // Not possible to refresh without a refresh token
-          if (!tokenSet.refresh_token) return true
-
-          // If the refresh token is invalid, delete the session from the store
-          if (err instanceof RefreshError) return true
-
-          // If fetching a refresh token fails because they are no longer valid,
-          // delete the session from the sessionStore.
-          if (await isRefreshDeniedError(err)) return true
-
-          // Unknown cause, keep the session in the store
-          return false
+        deleteOnError: async (err) => {
+          return err instanceof RefreshError
         },
       },
     )
@@ -171,12 +179,4 @@ export class SessionGetter extends CachedGetter<string, Session> {
       )
     })
   }
-}
-
-async function isRefreshDeniedError(err: unknown) {
-  return (
-    err instanceof OAuthResponseError &&
-    err.status === 400 &&
-    err.error === 'invalid_grant'
-  )
 }

@@ -26,6 +26,10 @@ export class Runtime {
     return base64url.baseEncode(bytes)
   }
 
+  get hasLock() {
+    return !!this.implementation.requestLock
+  }
+
   public async withLock<T>(
     name: string,
     fn: () => T | PromiseLike<T>,

@@ -39,6 +39,10 @@ export class OAuthAgent {
     return this.server.serverMetadata
   }
 
+  public async refreshIfNeeded(): Promise<void> {
+    await this.getTokenSet(undefined)
+  }
+
   /**
    * @param refresh See {@link SessionGetter.getSession}
    */
